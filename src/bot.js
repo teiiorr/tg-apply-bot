@@ -141,7 +141,7 @@ async function sendStepPrompt(chatId, step, session) {
     case STEPS.fullName:
       await sendMessage(
         chatId,
-        `${prefix}${header("F.I.Sh.")}\n\n👤 Iltimos, to‘liq ism, familiya va otangizning ismini kiriting.`,
+        `${prefix}${header("F.I.O.")}\n\n👤 Iltimos, to‘liq ism, familiya va otangizning ismini kiriting.`,
         { parse_mode: "HTML", reply_markup: removeKeyboard() }
       );
       return;
