@@ -174,7 +174,7 @@ async function sendStepPrompt(chatId, step, session) {
     case STEPS.labChoice:
       await sendMessage(
         chatId,
-        ["🎬 Assalomu alaykum!", "", "Iltimos, qaysi laboratoriyaga ro‘yxatdan o‘tmoqchi ekaningizni tanlang:"].join("\n"),
+        ["🎬 Iltimos, qaysi laboratoriyaga ro‘yxatdan o‘tmoqchi ekaningizni tanlang:"].join("\n"),
         { parse_mode: "HTML", reply_markup: labKeyboard() }
       );
       return;
@@ -324,7 +324,11 @@ async function startApplication(chatId) {
   await sendMessage(
     chatId,
     [
-      "📝 <b>Ariza topshirish boshlandi</b>",
+      "Assalomu alaykum!",
+      "",
+      "Bolalar kontentini rivojlantirish markazi qoshidagi \"Ijodiy laboratoriyalar\" botiga xush kelibsiz.",
+      "",
+      "Bu yerda siz o‘zingizga mos laboratoriyani tanlab, ro‘yxatdan o‘tishingiz mumkin.",
       "",
       "Iltimos, savollarga ketma-ket va aniq javob bering.",
       "Ma’lumotlaringiz laboratoriya saralashi uchun muhim.",
