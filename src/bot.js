@@ -3,18 +3,31 @@ const { ok, err, info, header } = require("./ui");
 
 const sessions = new Map();
 
+const LABS = {
+  screenplay: {
+    key: "screenplay",
+    label: "🎬 Ssenariy yozish laboratoriyasi",
+    adminLabel: "Yusuf Roziqov ssenariy yozish laboratoriyasi",
+  },
+  voice: {
+    key: "voice",
+    label: "🎙️ Bolalar ovozi dublyaj maktabi",
+    adminLabel: "Mukambar Rahimova “Bolalar ovozi” dublyaj maktabi",
+  },
+};
+
 const REGIONS = [
   "Toshkent shahri",
   "Toshkent viloyati",
   "Andijon viloyati",
   "Buxoro viloyati",
-  "Farg'ona viloyati",
+  "Farg‘ona viloyati",
   "Jizzax viloyati",
   "Xorazm viloyati",
   "Namangan viloyati",
   "Navoiy viloyati",
   "Qashqadaryo viloyati",
-  "Qoraqalpog'iston Respublikasi",
+  "Qoraqalpog‘iston Respublikasi",
   "Samarqand viloyati",
   "Sirdaryo viloyati",
   "Surxondaryo viloyati",
@@ -48,7 +61,9 @@ const FILE_FIELDS = [
 ];
 
 const STEPS = {
+  labChoice: "labChoice",
   fullName: "fullName",
+  age: "age",
   birthDate: "birthDate",
   region: "region",
   phone: "phone",
@@ -64,7 +79,7 @@ const STEPS = {
   done: "done",
 };
 
-const STEP_ORDER = [
+const SCREENPLAY_STEP_ORDER = [
   STEPS.fullName,
   STEPS.birthDate,
   STEPS.region,
@@ -80,6 +95,8 @@ const STEP_ORDER = [
   STEPS.assignment4,
 ];
 
+const VOICE_STEP_ORDER = [STEPS.fullName, STEPS.age, STEPS.region, STEPS.phone];
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -94,9 +111,11 @@ function isAllowedDocument(document) {
 
 function getInitialSession() {
   return {
-    step: STEPS.fullName,
+    step: STEPS.labChoice,
     data: {
+      lab: "",
       fullName: "",
+      age: "",
       birthDate: "",
       region: "",
       phone: "",
@@ -113,6 +132,14 @@ function getInitialSession() {
   };
 }
 
+function labKeyboard() {
+  return {
+    keyboard: [[LABS.screenplay.label], [LABS.voice.label]],
+    resize_keyboard: true,
+    one_time_keyboard: true,
+  };
+}
+
 function regionKeyboard() {
   const rows = [];
   for (let i = 0; i < REGIONS.length; i += 2) rows.push(REGIONS.slice(i, i + 2));
@@ -120,7 +147,7 @@ function regionKeyboard() {
 }
 
 function yesNoKeyboard() {
-  return { keyboard: [["Ha", "Yo'q"]], resize_keyboard: true, one_time_keyboard: true };
+  return { keyboard: [["Ha", "Yo‘q"]], resize_keyboard: true, one_time_keyboard: true };
 }
 
 function removeKeyboard() {
@@ -128,22 +155,52 @@ function removeKeyboard() {
 }
 
 function stepProgress(session) {
-  const index = STEP_ORDER.indexOf(session.step);
+  const order = getStepOrder(session);
+  const index = order.indexOf(session.step);
   const current = index === -1 ? 1 : index + 1;
-  const total = STEP_ORDER.length + 1; // + финал
+  const total = order.length + 1;
   return `📌 Bosqich: <b>${current}/${total}</b>`;
+}
+
+function getStepOrder(session) {
+  if (session?.data?.lab === LABS.voice.key) return VOICE_STEP_ORDER;
+  return SCREENPLAY_STEP_ORDER;
 }
 
 async function sendStepPrompt(chatId, step, session) {
   const prefix = session ? `${stepProgress(session)}\n\n` : "";
 
   switch (step) {
+    case STEPS.labChoice:
+      await sendMessage(
+        chatId,
+        ["🎬 Assalomu alaykum!", "", "Iltimos, qaysi laboratoriyaga ro‘yxatdan o‘tmoqchi ekaningizni tanlang:"].join("\n"),
+        { parse_mode: "HTML", reply_markup: labKeyboard() }
+      );
+      return;
+
     case STEPS.fullName:
+      if (session?.data?.lab === LABS.voice.key) {
+        await sendMessage(
+          chatId,
+          `${prefix}${header("F.I.O.")}\n\n👤 Iltimos, nomzod bolaning to‘liq ism, familiya va otasining ismini kiriting.`,
+          { parse_mode: "HTML", reply_markup: removeKeyboard() }
+        );
+        return;
+      }
+
       await sendMessage(
         chatId,
         `${prefix}${header("F.I.O.")}\n\n👤 Iltimos, to‘liq ism, familiya va otangizning ismini kiriting.`,
         { parse_mode: "HTML", reply_markup: removeKeyboard() }
       );
+      return;
+
+    case STEPS.age:
+      await sendMessage(chatId, `${prefix}${header("Yoshi")}\n\n🎂 Iltimos, nomzod bolaning yoshini kiriting.`, {
+        parse_mode: "HTML",
+        reply_markup: removeKeyboard(),
+      });
       return;
 
     case STEPS.birthDate:
@@ -244,36 +301,21 @@ async function sendStepPrompt(chatId, step, session) {
 }
 
 function getNextStep(step, session) {
-  switch (step) {
-    case STEPS.fullName:
-      return STEPS.birthDate;
-    case STEPS.birthDate:
-      return STEPS.region;
-    case STEPS.region:
-      return STEPS.phone;
-    case STEPS.phone:
-      return STEPS.occupation;
-    case STEPS.occupation:
-      return STEPS.hasExperience;
-    case STEPS.hasExperience:
-      return session.data.hasExperience === "yes" ? STEPS.experienceDirection : STEPS.publishedWorksUrl;
-    case STEPS.experienceDirection:
-      return STEPS.publishedWorksUrl;
-    case STEPS.publishedWorksUrl:
-      return STEPS.motivation;
-    case STEPS.motivation:
-      return STEPS.assignment1;
-    case STEPS.assignment1:
-      return STEPS.assignment2;
-    case STEPS.assignment2:
-      return STEPS.assignment3;
-    case STEPS.assignment3:
-      return STEPS.assignment4;
-    case STEPS.assignment4:
-      return STEPS.done;
-    default:
-      return STEPS.done;
+  if (step === STEPS.labChoice) {
+    return session.data.lab ? getStepOrder(session)[0] : STEPS.labChoice;
   }
+
+  const order = getStepOrder(session);
+  const index = order.indexOf(step);
+
+  if (index === -1 || index === order.length - 1) return STEPS.done;
+
+  const nextStep = order[index + 1];
+  if (nextStep === STEPS.experienceDirection && session.data.hasExperience !== "yes") {
+    return STEPS.publishedWorksUrl;
+  }
+
+  return nextStep;
 }
 
 async function startApplication(chatId) {
@@ -287,32 +329,48 @@ async function startApplication(chatId) {
       "Iltimos, savollarga ketma-ket va aniq javob bering.",
       "Ma’lumotlaringiz laboratoriya saralashi uchun muhim.",
       "",
-      `${info("Bekor qilish: /cancel")}`,
+      info("Bekor qilish: /cancel"),
     ].join("\n"),
-    { parse_mode: "HTML", reply_markup: removeKeyboard() }
+    { parse_mode: "HTML", reply_markup: labKeyboard() }
   );
 
   const session = sessions.get(chatId);
-  await sendStepPrompt(chatId, STEPS.fullName, session);
+  await sendStepPrompt(chatId, STEPS.labChoice, session);
 }
 
 async function finishApplication(chatId, session) {
   const { data } = session;
+  const isVoice = data.lab === LABS.voice.key;
 
-  const summary = [
-    "<b>📥 Yangi ariza: Telegram bot orqali</b>",
-    "",
+  const summary = isVoice
+    ? [
+        "--------------",
+        "<b>📥 Yangi ariza (Telegram bot)</b>",
+        "--------------",
+        `<b>🏫 Laboratoriya:</b> ${escapeHtml(LABS.voice.adminLabel)}`,
+        `<b>👤 F.I.O.:</b> ${escapeHtml(data.fullName)}`,
+        `<b>🎂 Yoshi:</b> ${escapeHtml(data.age)}`,
+        `<b>📍 Hudud:</b> ${escapeHtml(data.region)}`,
+        `<b>📞 Telefon:</b> ${escapeHtml(data.phone)}`,
+        "--------------",
+      ].join("\n")
+    : [
+    "--------------",
+    "<b>📥 Yangi ariza (Telegram bot)</b>",
+    "--------------",
+    `<b>🏫 Laboratoriya:</b> ${escapeHtml(LABS.screenplay.adminLabel)}`,
     `<b>👤 F.I.O.:</b> ${escapeHtml(data.fullName)}`,
-    `<b>📅 Tug'ilgan sana:</b> ${escapeHtml(data.birthDate)}`,
+    `<b>📅 Tug‘ilgan sana:</b> ${escapeHtml(data.birthDate)}`,
     `<b>📍 Hudud:</b> ${escapeHtml(data.region)}`,
     `<b>📞 Telefon:</b> ${escapeHtml(data.phone)}`,
     `<b>💼 Faoliyati:</b> ${escapeHtml(data.occupation)}`,
-    `<b>🎯 Tajriba bor:</b> ${data.hasExperience === "yes" ? "Ha" : "Yo'q"}`,
-    data.hasExperience === "yes" ? `<b>✍️ Yo'nalish:</b> ${escapeHtml(data.experienceDirection)}` : null,
+    `<b>🎯 Tajriba bor:</b> ${data.hasExperience === "yes" ? "Ha" : "Yo‘q"}`,
+    data.hasExperience === "yes" ? `<b>✍️ Yo‘nalish:</b> ${escapeHtml(data.experienceDirection)}` : null,
     data.publishedWorksUrl ? `<b>🔗 Nashr etilgan ishlar:</b> ${escapeHtml(data.publishedWorksUrl)}` : null,
     "",
     "<b>🌟 Motivatsiya:</b>",
     escapeHtml(data.motivation),
+    "--------------",
   ]
     .filter(Boolean)
     .join("\n");
@@ -323,26 +381,36 @@ async function finishApplication(chatId, session) {
       disable_web_page_preview: true,
     });
 
-    for (const field of FILE_FIELDS) {
-      const file = data[field.key];
-      await sendAdminDocument(file.fileId, `${escapeHtml(data.fullName)} | ${field.title}`);
+    if (!isVoice) {
+      for (const field of FILE_FIELDS) {
+        const file = data[field.key];
+        await sendAdminDocument(file.fileId, `${escapeHtml(data.fullName)} | ${field.title}`);
+      }
     }
 
     sessions.delete(chatId);
 
-    await sendMessage(
-      chatId,
-      [
-        "🎉 <b>Ariza muvaffaqiyatli qabul qilindi!</b>",
-        "",
-        "Siz yuborgan ma’lumotlar ekspertlar tomonidan ko‘rib chiqiladi.",
-        "Saralashdan o‘tgan nomzodlar bilan tez orada bog‘lanamiz.",
-        "",
-        "Bolalar uchun ijod qilish — katta mas’uliyat.",
-        "Sizga muvaffaqiyat tilaymiz! 🌟",
-      ].join("\n"),
-      { parse_mode: "HTML", reply_markup: removeKeyboard() }
-    );
+    const successLines = isVoice
+      ? [
+          "🎉 <b>Ariza muvaffaqiyatli qabul qilindi!</b>",
+          "",
+          "Siz yuborgan ma’lumotlar ekspertlar tomonidan ko‘rib chiqiladi.",
+          "Saralashdan o‘tgan nomzodlar bilan tez orada bog‘lanamiz.",
+        ]
+      : [
+          "🎉 <b>Ariza muvaffaqiyatli qabul qilindi!</b>",
+          "",
+          "Siz yuborgan ma’lumotlar ekspertlar tomonidan ko‘rib chiqiladi.",
+          "Saralashdan o‘tgan nomzodlar bilan tez orada bog‘lanamiz.",
+          "",
+          "Bolalar uchun ijod qilish — katta mas’uliyat.",
+          "Sizga muvaffaqiyat tilaymiz! 🌟",
+        ];
+
+    await sendMessage(chatId, successLines.join("\n"), {
+      parse_mode: "HTML",
+      reply_markup: removeKeyboard(),
+    });
   } catch (error) {
     console.error("Failed to finish application:", error);
     await sendMessage(
@@ -368,6 +436,44 @@ async function confirmAndAdvance(chatId, message, session) {
 
 async function handleTextStep(chatId, text, session) {
   switch (session.step) {
+    case STEPS.labChoice:
+      if (text === LABS.screenplay.label) {
+        session.data.lab = LABS.screenplay.key;
+        await sendMessage(
+          chatId,
+          [
+            "Assalomu alaykum! Bolalar kontentini rivojlantirish markazi hamda kinodramaturg va kinorejissyor Yusuf Roziqovning ssenariy yozish laboratoriyasiga ro‘yxatdan o‘tish botiga xush kelibsiz.",
+            "",
+            "Bu yerda siz o‘z ijodiy ishlaringizni topshirishingiz va laboratoriya ishtirokchisiga aylanishingiz mumkin.",
+          ].join("\n"),
+          { parse_mode: "HTML", reply_markup: removeKeyboard() }
+        );
+        session.step = getNextStep(session.step, session);
+        await sendStepPrompt(chatId, session.step, session);
+        return;
+      }
+
+      if (text === LABS.voice.label) {
+        session.data.lab = LABS.voice.key;
+        await sendMessage(
+          chatId,
+          [
+            "Siz quyidagi yo‘nalishni tanladingiz:",
+            `<b>${escapeHtml(LABS.voice.label)}</b>`,
+            "",
+            "Assalomu alaykum! Bolalar kontentini rivojlantirish markazi hamda Mukambar Rahimovaning",
+            "“Bolalar ovozi” dublyaj maktabiga ro‘yxatdan o‘tish botiga xush kelibsiz.",
+          ].join("\n"),
+          { parse_mode: "HTML", reply_markup: removeKeyboard() }
+        );
+        session.step = getNextStep(session.step, session);
+        await sendStepPrompt(chatId, session.step, session);
+        return;
+      }
+
+      await sendMessage(chatId, err("Iltimos, laboratoriyani tugmalar orqali tanlang."));
+      return;
+
     case STEPS.fullName:
       if (text.length < 5) {
         await sendMessage(chatId, err("Iltimos, F.I.O. ni to‘liqroq kiriting."));
@@ -376,6 +482,17 @@ async function handleTextStep(chatId, text, session) {
       session.data.fullName = text;
       await confirmAndAdvance(chatId, "F.I.O. qabul qilindi.", session);
       return;
+
+    case STEPS.age: {
+      const parsedAge = Number(text);
+      if (!Number.isInteger(parsedAge) || parsedAge < 4 || parsedAge > 25) {
+        await sendMessage(chatId, err("Yoshni to‘g‘ri kiriting (masalan: 12)."));
+        return;
+      }
+      session.data.age = String(parsedAge);
+      await confirmAndAdvance(chatId, "Yosh qabul qilindi.", session);
+      return;
+    }
 
     case STEPS.birthDate:
       if (!/^\d{2}\.\d{2}\.\d{4}$/.test(text)) {
@@ -415,7 +532,7 @@ async function handleTextStep(chatId, text, session) {
 
     case STEPS.hasExperience: {
       const normalized = text.toLowerCase();
-      if (!["ha", "yo'q", "yoq"].includes(normalized)) {
+      if (!["ha", "yo‘q", "yo'q", "yoq"].includes(normalized)) {
         await sendMessage(chatId, err("Iltimos, Ha yoki Yo‘q tugmasini tanlang."));
         return;
       }
@@ -434,7 +551,8 @@ async function handleTextStep(chatId, text, session) {
       return;
 
     case STEPS.publishedWorksUrl:
-      session.data.publishedWorksUrl = text.toLowerCase() === "yo'q" ? "" : text;
+      const lowered = text.toLowerCase();
+      session.data.publishedWorksUrl = lowered === "yo‘q" || lowered === "yo'q" ? "" : text;
       await confirmAndAdvance(chatId, "Ma’lumot qabul qilindi.", session);
       return;
 
@@ -480,28 +598,12 @@ async function handleMessage(message) {
   const text = message?.text?.trim();
   const document = message?.document;
 
+  console.log("TEMP CHAT_ID:", chatId);
+
   if (!chatId) return;
 
   if (text === "/start") {
-    await sendMessage(
-      chatId,
-      [
-        "🎬 Assalomu alaykum!",
-        "",
-        "Siz Bolalar kontentini rivojlantirish markazi qoshidagi Yusuf Roziqovning",
-        "<b>ssenariy yozish laboratoriyasi</b> uchun ro‘yxatdan o‘tish botidasiz.",
-        "",
-        "Bu yerda siz ariza topshirishingiz va ijodiy ishlaringizni yuborishingiz mumkin.",
-        "",
-        "📌 Buyruqlar:",
-        "/apply — ariza topshirishni boshlash",
-        "/cancel — joriy arizani bekor qilish",
-        "/help — yordam",
-        "",
-        "Boshlash uchun /apply yozing.",
-      ].join("\n"),
-      { parse_mode: "HTML" }
-    );
+    await startApplication(chatId);
     return;
   }
 
