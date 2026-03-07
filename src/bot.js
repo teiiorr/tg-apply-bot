@@ -350,8 +350,8 @@ async function finishApplication(chatId, session) {
     ? [
         "--------------",
         "<b>📥 Yangi ariza (Telegram bot)</b>",
-        "--------------",
         `<b>🏫 Laboratoriya:</b> ${escapeHtml(LABS.voice.adminLabel)}`,
+        "--------------",
         `<b>👤 F.I.O.:</b> ${escapeHtml(data.fullName)}`,
         `<b>🎂 Yoshi:</b> ${escapeHtml(data.age)}`,
         `<b>📍 Hudud:</b> ${escapeHtml(data.region)}`,
@@ -361,8 +361,8 @@ async function finishApplication(chatId, session) {
     : [
     "--------------",
     "<b>📥 Yangi ariza (Telegram bot)</b>",
-    "--------------",
     `<b>🏫 Laboratoriya:</b> ${escapeHtml(LABS.screenplay.adminLabel)}`,
+    "--------------",
     `<b>👤 F.I.O.:</b> ${escapeHtml(data.fullName)}`,
     `<b>📅 Tug‘ilgan sana:</b> ${escapeHtml(data.birthDate)}`,
     `<b>📍 Hudud:</b> ${escapeHtml(data.region)}`,
