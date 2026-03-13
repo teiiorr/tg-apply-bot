@@ -2,17 +2,30 @@ const { sendMessage, sendAdminMessage, sendAdminDocument } = require("./telegram
 const { ok, err, info, header } = require("./ui");
 
 const sessions = new Map();
+const APP_TIME_ZONE = process.env.APP_TIMEZONE || "Asia/Tashkent";
+
+function parseDeadline(rawValue, envName) {
+  if (!rawValue) return null;
+  const timestamp = Date.parse(rawValue);
+  if (Number.isNaN(timestamp)) {
+    console.warn(`Invalid deadline in ${envName}: "${rawValue}"`);
+    return null;
+  }
+  return timestamp;
+}
 
 const LABS = {
   screenplay: {
     key: "screenplay",
     label: "🎬 Ssenariy yozish laboratoriyasi",
     adminLabel: "Yusuf Roziqov ssenariy yozish laboratoriyasi",
+    deadlineAt: parseDeadline(process.env.LAB_SCREENPLAY_DEADLINE, "LAB_SCREENPLAY_DEADLINE"),
   },
   voice: {
     key: "voice",
     label: "🎙️ Bolalar ovozi dublyaj maktabi",
     adminLabel: "Mukambar Rahimova “Bolalar ovozi” dublyaj maktabi",
+    deadlineAt: parseDeadline(process.env.LAB_VOICE_DEADLINE, "LAB_VOICE_DEADLINE"),
   },
 };
 
@@ -160,6 +173,97 @@ function stepProgress(session) {
   const current = index === -1 ? 1 : index + 1;
   const total = order.length + 1;
   return `📌 Bosqich: <b>${current}/${total}</b>`;
+}
+
+function formatTimeLeft(milliseconds) {
+  if (milliseconds <= 0) return "0 daqiqa";
+
+  const totalMinutes = Math.ceil(milliseconds / (60 * 1000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+
+  if (days > 0) parts.push(`${days} kun`);
+  if (hours > 0) parts.push(`${hours} soat`);
+  if (minutes > 0 || parts.length === 0) parts.push(`${minutes} daqiqa`);
+
+  return parts.join(" ");
+}
+
+function formatDeadline(deadlineAt) {
+  return new Intl.DateTimeFormat("uz-UZ", {
+    timeZone: APP_TIME_ZONE,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(deadlineAt));
+}
+
+function isLabOpen(lab) {
+  return !lab?.deadlineAt || Date.now() < lab.deadlineAt;
+}
+
+function getLabByKey(labKey) {
+  if (labKey === LABS.voice.key) return LABS.voice;
+  if (labKey === LABS.screenplay.key) return LABS.screenplay;
+  return null;
+}
+
+function getDeadlineMessage(lab) {
+  if (!lab?.deadlineAt) return "";
+
+  if (!isLabOpen(lab)) {
+    return [
+      "⛔ <b>Arizalar qabuli yopilgan.</b>",
+      `🗓 Yakunlangan sana: <b>${escapeHtml(formatDeadline(lab.deadlineAt))}</b>`,
+    ].join("\n");
+  }
+
+  const remaining = lab.deadlineAt - Date.now();
+  return [
+    `⏳ <b>Arizalar qabuligacha qolgan vaqt:</b> ${escapeHtml(formatTimeLeft(remaining))}`,
+    `🗓 Yakunlanish muddati: <b>${escapeHtml(formatDeadline(lab.deadlineAt))}</b>`,
+  ].join("\n");
+}
+
+async function sendDeadlineStatus(chatId, session) {
+  const selectedLab = getLabByKey(session?.data?.lab);
+
+  if (selectedLab) {
+    await sendMessage(
+      chatId,
+      [header("Ariza muddati"), getDeadlineMessage(selectedLab) || info("Bu laboratoriya uchun deadline o‘rnatilmagan.")]
+        .filter(Boolean)
+        .join("\n\n"),
+      { parse_mode: "HTML" }
+    );
+    return;
+  }
+
+  await sendMessage(
+    chatId,
+    [
+      header("Laboratoriyalar muddatlari"),
+      `<b>${escapeHtml(LABS.screenplay.label)}</b>\n${getDeadlineMessage(LABS.screenplay) || "Deadline o‘rnatilmagan."}`,
+      `<b>${escapeHtml(LABS.voice.label)}</b>\n${getDeadlineMessage(LABS.voice) || "Deadline o‘rnatilmagan."}`,
+      info("Avval laboratoriyani tanlasangiz, faqat shu yo‘nalish muddati ko‘rsatiladi."),
+    ].join("\n\n"),
+    { parse_mode: "HTML" }
+  );
+}
+
+async function sendLabClosedMessage(chatId, lab) {
+  await sendMessage(
+    chatId,
+    [err("Tanlangan laboratoriya uchun arizalar qabuli yopilgan."), getDeadlineMessage(lab)]
+      .filter(Boolean)
+      .join("\n\n"),
+    { parse_mode: "HTML", reply_markup: labKeyboard() }
+  );
 }
 
 function getStepOrder(session) {
@@ -345,6 +449,23 @@ async function startApplication(chatId) {
 async function finishApplication(chatId, session) {
   const { data } = session;
   const isVoice = data.lab === LABS.voice.key;
+  const selectedLab = getLabByKey(data.lab);
+
+  if (selectedLab && !isLabOpen(selectedLab)) {
+    sessions.delete(chatId);
+    await sendMessage(
+      chatId,
+      [
+        err("Ushbu laboratoriya uchun arizalar qabuli yakunlangan."),
+        getDeadlineMessage(selectedLab),
+        info("Iltimos, /apply bilan qayta boshlang va ochiq laboratoriyani tanlang."),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+      { parse_mode: "HTML", reply_markup: removeKeyboard() }
+    );
+    return;
+  }
 
   const summary = isVoice
     ? [
@@ -442,6 +563,11 @@ async function handleTextStep(chatId, text, session) {
   switch (session.step) {
     case STEPS.labChoice:
       if (text === LABS.screenplay.label) {
+        if (!isLabOpen(LABS.screenplay)) {
+          await sendLabClosedMessage(chatId, LABS.screenplay);
+          return;
+        }
+
         session.data.lab = LABS.screenplay.key;
         await sendMessage(
           chatId,
@@ -449,6 +575,8 @@ async function handleTextStep(chatId, text, session) {
             "Assalomu alaykum! Bolalar kontentini rivojlantirish markazi hamda kinodramaturg va kinorejissyor Yusuf Roziqovning ssenariy yozish laboratoriyasiga ro‘yxatdan o‘tish botiga xush kelibsiz.",
             "",
             "Bu yerda siz o‘z ijodiy ishlaringizni topshirishingiz va laboratoriya ishtirokchisiga aylanishingiz mumkin.",
+            "",
+            getDeadlineMessage(LABS.screenplay),
           ].join("\n"),
           { parse_mode: "HTML", reply_markup: removeKeyboard() }
         );
@@ -458,6 +586,11 @@ async function handleTextStep(chatId, text, session) {
       }
 
       if (text === LABS.voice.label) {
+        if (!isLabOpen(LABS.voice)) {
+          await sendLabClosedMessage(chatId, LABS.voice);
+          return;
+        }
+
         session.data.lab = LABS.voice.key;
         await sendMessage(
           chatId,
@@ -467,6 +600,8 @@ async function handleTextStep(chatId, text, session) {
             "",
             "Assalomu alaykum! Bolalar kontentini rivojlantirish markazi hamda Mukambar Rahimovaning",
             "“Bolalar ovozi” dublyaj maktabiga ro‘yxatdan o‘tish botiga xush kelibsiz.",
+            "",
+            getDeadlineMessage(LABS.voice),
           ].join("\n"),
           { parse_mode: "HTML", reply_markup: removeKeyboard() }
         );
@@ -602,8 +737,6 @@ async function handleMessage(message) {
   const text = message?.text?.trim();
   const document = message?.document;
 
-  console.log("TEMP CHAT_ID:", chatId);
-
   if (!chatId) return;
 
   if (text === "/start") {
@@ -623,6 +756,7 @@ async function handleMessage(message) {
         "• Hudud va Ha/Yo‘q tanlovlari tugmalar orqali beriladi",
         "• Hujjatlar faqat PDF yoki DOCX formatda qabul qilinadi",
         "• Har bir bosqichni ketma-ket to‘ldiring",
+        "• Qolgan vaqtni ko‘rish: /time yoki /deadline",
         "",
         "Agar xatolik bo‘lsa /cancel qilib qayta boshlashingiz mumkin.",
       ].join("\n"),
@@ -645,6 +779,11 @@ async function handleMessage(message) {
   }
 
   const session = sessions.get(chatId);
+
+  if (text === "/time" || text === "/deadline") {
+    await sendDeadlineStatus(chatId, session);
+    return;
+  }
 
   if (!session) {
     await sendMessage(chatId, info("Ariza topshirish uchun /apply yozing."));
